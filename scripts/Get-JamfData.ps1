@@ -37,7 +37,7 @@ param(
     [string]$OutputFormat = "Both",
     
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".\data",
+    [string]$OutputPath = "C:\backend\data-integration4\scripts\jamf\data",
     
     [Parameter(Mandatory = $false)]
     [ValidateSet("Info", "Warning", "Error", "Debug")]
@@ -48,6 +48,7 @@ param(
 $Global:LogFile = ""
 $Global:AccessToken = ""
 $Global:Config = $null
+$Global:ProxySettings = $null
 
 #region Logging Functions
 function Write-Log {
@@ -80,7 +81,13 @@ function Write-Log {
 function Initialize-Logging {
     param([string]$OutputDirectory)
     
-    $logDirectory = Join-Path $OutputDirectory "logs"
+    # Use config path if available, otherwise fall back to parameter
+    $logDirectory = if ($Global:Config.output.logPath) { 
+        $Global:Config.output.logPath 
+    } else { 
+        Join-Path $OutputDirectory "logs" 
+    }
+    
     if (!(Test-Path $logDirectory)) {
         New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     }
@@ -149,6 +156,74 @@ function New-DefaultConfiguration {
 }
 #endregion
 
+#region Proxy Configuration Functions
+function Initialize-ProxySettings {
+    param($Config)
+    
+    try {
+        if ($Config.proxy.enabled -eq $true) {
+            Write-Log "Configuring proxy settings..." -Level "Info"
+            
+            $proxyUrl = $Config.proxy.url
+            $credentialTarget = $Config.proxy.credentialTarget
+            
+            # Get stored credentials if specified
+            $proxyCredential = $null
+            if ($credentialTarget -and $credentialTarget -ne "****") {
+                try {
+                    $proxyCredential = Get-StoredCredential -Target $credentialTarget
+                    if ($proxyCredential) {
+                        Write-Log "Proxy credentials loaded from credential store" -Level "Info"
+                    } else {
+                        Write-Log "Warning: Could not retrieve proxy credentials from store" -Level "Warning"
+                    }
+                }
+                catch {
+                    Write-Log "Warning: Failed to load proxy credentials: $($_.Exception.Message)" -Level "Warning"
+                }
+            }
+            
+            $Global:ProxySettings = @{
+                Url = $proxyUrl
+                Credential = $proxyCredential
+                UseDefaultCredentials = $proxyCredential -eq $null
+            }
+            
+            Write-Log "Proxy configured: $proxyUrl" -Level "Info"
+        } else {
+            Write-Log "Proxy disabled in configuration" -Level "Info"
+            $Global:ProxySettings = $null
+        }
+    }
+    catch {
+        Write-Log "Failed to configure proxy settings: $($_.Exception.Message)" -Level "Error"
+        $Global:ProxySettings = $null
+    }
+}
+
+function Get-WebRequestParams {
+    param(
+        [hashtable]$BaseParams = @{}
+    )
+    
+    $params = $BaseParams.Clone()
+    
+    if ($Global:ProxySettings) {
+        $params.Proxy = $Global:ProxySettings.Url
+        
+        if ($Global:ProxySettings.Credential) {
+            $params.ProxyCredential = $Global:ProxySettings.Credential
+        } elseif ($Global:ProxySettings.UseDefaultCredentials) {
+            $params.ProxyUseDefaultCredentials = $true
+        }
+        
+        Write-Log "Using proxy for web request: $($Global:ProxySettings.Url)" -Level "Debug"
+    }
+    
+    return $params
+}
+#endregion
+
 #region Authentication Functions
 function Get-AccessToken {
     param(
@@ -167,7 +242,14 @@ function Get-AccessToken {
         
         Write-Log "Requesting access token from JAMF Pro..." -Level "Info"
         
-        $response = Invoke-RestMethod -Uri $authUrl -Method Post -Body $authBody -ContentType "application/x-www-form-urlencoded"
+        $webParams = Get-WebRequestParams -BaseParams @{
+            Uri = $authUrl
+            Method = "Post"
+            Body = $authBody
+            ContentType = "application/x-www-form-urlencoded"
+        }
+        
+        $response = Invoke-RestMethod @webParams
         
         if ($response.access_token) {
             Write-Log "Access token obtained successfully" -Level "Info"
@@ -196,7 +278,13 @@ function Test-AccessToken {
             "Accept" = "application/json"
         }
         
-        $response = Invoke-RestMethod -Uri $testUrl -Method Get -Headers $headers
+        $webParams = Get-WebRequestParams -BaseParams @{
+            Uri = $testUrl
+            Method = "Get"
+            Headers = $headers
+        }
+        
+        $response = Invoke-RestMethod @webParams
         Write-Log "Access token validation successful" -Level "Info"
         return $true
     }
@@ -239,7 +327,13 @@ function Get-ComputersInventory {
         
         while ($retryCount -lt $MaxRetries -and !$success) {
             try {
-                $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers
+                $webParams = Get-WebRequestParams -BaseParams @{
+                    Uri = $url
+                    Method = "Get"
+                    Headers = $headers
+                }
+                
+                $response = Invoke-RestMethod @webParams
                 $success = $true
                 
                 if ($response.results -and $response.results.Count -gt 0) {
@@ -287,9 +381,21 @@ function Export-ToJson {
     )
     
     try {
+        # Use config data path if available, otherwise fall back to parameter
+        $dataDirectory = if ($Global:Config.output.dataPath) { 
+            $Global:Config.output.dataPath 
+        } else { 
+            $OutputDirectory 
+        }
+        
+        # Ensure data directory exists
+        if (!(Test-Path $dataDirectory)) {
+            New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+        }
+        
         $timestamp = if ($IncludeTimestamp) { "_$(Get-Date -Format 'yyyyMMdd_HHmmss')" } else { "" }
         $fileName = "jamf_computers_inventory$timestamp.json"
-        $filePath = Join-Path $OutputDirectory $fileName
+        $filePath = Join-Path $dataDirectory $fileName
         
         $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $filePath -Encoding UTF8
         Write-Log "JSON data exported to: $filePath" -Level "Info"
@@ -309,6 +415,18 @@ function Export-ToCsv {
     )
     
     try {
+        # Use config data path if available, otherwise fall back to parameter
+        $dataDirectory = if ($Global:Config.output.dataPath) { 
+            $Global:Config.output.dataPath 
+        } else { 
+            $OutputDirectory 
+        }
+        
+        # Ensure data directory exists
+        if (!(Test-Path $dataDirectory)) {
+            New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+        }
+        
         $timestamp = if ($IncludeTimestamp) { "_$(Get-Date -Format 'yyyyMMdd_HHmmss')" } else { "" }
         
         # Flatten the complex object structure for CSV export
@@ -340,7 +458,7 @@ function Export-ToCsv {
         }
         
         $fileName = "jamf_computers_inventory$timestamp.csv"
-        $filePath = Join-Path $OutputDirectory $fileName
+        $filePath = Join-Path $dataDirectory $fileName
         
         $flattenedData | Export-Csv -Path $filePath -NoTypeInformation -Encoding UTF8
         Write-Log "CSV data exported to: $filePath" -Level "Info"
@@ -362,21 +480,14 @@ function Main {
             Write-Host "Created output directory: $OutputPath" -ForegroundColor Green
         }
         
-        # Initialize logging
-        Initialize-Logging -OutputDirectory $OutputPath
-        
-        Write-Log "JAMF Pro Data Extraction Script Started" -Level "Info"
-        Write-Log "Output Format: $OutputFormat" -Level "Info"
-        Write-Log "Output Path: $OutputPath" -Level "Info"
-        
-        # Load or create configuration
+        # Load configuration first to get paths
         if (!(Test-Path $ConfigPath)) {
-            Write-Log "Configuration file not found. Creating default configuration..." -Level "Warning"
+            Write-Host "Configuration file not found. Creating default configuration..." -ForegroundColor Yellow
             $Global:Config = New-DefaultConfiguration -ConfigFilePath $ConfigPath
             if (!$Global:Config) {
                 throw "Failed to create configuration file"
             }
-            Write-Log "Please update the configuration file with your JAMF Pro credentials and run the script again." -Level "Warning"
+            Write-Host "Please update the configuration file with your JAMF Pro credentials and run the script again." -ForegroundColor Yellow
             return
         } else {
             $Global:Config = Load-Configuration -ConfigFilePath $ConfigPath
@@ -384,6 +495,16 @@ function Main {
                 throw "Failed to load configuration file"
             }
         }
+
+        # Initialize logging
+        Initialize-Logging -OutputDirectory $OutputPath
+        
+        Write-Log "JAMF Pro Data Extraction Script Started" -Level "Info"
+        Write-Log "Output Format: $OutputFormat" -Level "Info"
+        Write-Log "Output Path: $OutputPath" -Level "Info"
+        
+        # Initialize proxy settings
+        Initialize-ProxySettings -Config $Global:Config
         
         # Validate configuration
         if ($Global:Config.jamf.clientId -eq "YOUR_CLIENT_ID" -or $Global:Config.jamf.clientSecret -eq "YOUR_CLIENT_SECRET") {

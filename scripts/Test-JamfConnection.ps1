@@ -71,6 +71,29 @@ function Test-ConfigurationFile {
             }
         }
         
+        # Test proxy configuration
+        if ($config.proxy -and $config.proxy.enabled -eq $true) {
+            Write-TestResult -Test "Proxy Configuration" -Success $true -Message "Proxy enabled: $($config.proxy.url)"
+            
+            if ($config.proxy.credentialTarget -and $config.proxy.credentialTarget -ne "****") {
+                try {
+                    $testCred = Get-StoredCredential -Target $config.proxy.credentialTarget -ErrorAction Stop
+                    if ($testCred) {
+                        Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Credentials found in store"
+                    } else {
+                        Write-TestResult -Test "Proxy Credentials" -Success $false -Message "No credentials found in store"
+                    }
+                }
+                catch {
+                    Write-TestResult -Test "Proxy Credentials" -Success $false -Message "Failed to access credential store: $($_.Exception.Message)"
+                }
+            } else {
+                Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Using default credentials"
+            }
+        } else {
+            Write-TestResult -Test "Proxy Configuration" -Success $true -Message "Proxy disabled"
+        }
+        
         return $config
     }
     catch {

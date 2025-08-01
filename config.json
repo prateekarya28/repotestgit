@@ -5,6 +5,12 @@
     "clientSecret": "YOUR_CLIENT_SECRET",
     "apiVersion": "v1"
   },
+  "proxy": {
+    "enabled": true,
+    "url": "*********",
+    "credentialTarget": "LegacyGeneric:target=****",
+    "useSystemProxy": false
+  },
   "extraction": {
     "sections": [
       "GENERAL",
@@ -19,6 +25,9 @@
     "retryDelaySeconds": 5
   },
   "output": {
+    "basePath": "C:\\backend\\data-integration4\\scripts\\jamf",
+    "dataPath": "C:\\backend\\data-integration4\\scripts\\jamf\\data",
+    "logPath": "C:\\backend\\data-integration4\\scripts\\jamf\\logs",
     "timestampFormat": "yyyyMMdd_HHmmss",
     "includeTimestampInFilename": true,
     "compressOutput": false
