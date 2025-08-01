@@ -6,7 +6,7 @@ This repository contains PowerShell scripts to extract computer inventory data f
 
 The solution includes:
 - **`Get-JamfData.ps1`** - Main data extraction script
-- **`Schedule-JamfDataExtraction.ps1`** - Windows Task Scheduler setup script
+- **`Test-JamfConnection.ps1`** - Connection and credential validation script
 - **`config.json`** - Configuration file for API credentials and settings
 
 ## 🚀 Features
@@ -16,7 +16,7 @@ The solution includes:
 - **Multiple Output Formats** - JSON, CSV, or both
 - **Comprehensive Logging** - Detailed logs with timestamps and levels
 - **Error Handling & Retry Logic** - Robust error handling with configurable retries
-- **Scheduled Execution** - Windows Task Scheduler integration
+- **Enterprise Integration Ready** - Designed for integration with enterprise scheduling systems (e.g., Hitachi PDI)
 - **Configurable Sections** - Extract specific data sections from JAMF Pro
 - **Timestamp Support** - Optional timestamped filenames
 
@@ -33,8 +33,8 @@ The script extracts the following sections from JAMF Pro:
 
 - **PowerShell 5.1** or later
 - **JAMF Pro API Access** - Client ID and Client Secret
-- **Windows OS** - For Task Scheduler functionality
-- **Network Access** - To your JAMF Pro instance
+- **CredentialManager Module** - For proxy authentication
+- **Network Access** - To your JAMF Pro instance (via proxy if configured)
 
 ## ⚙️ Configuration
 
@@ -82,6 +82,13 @@ Edit `config.json` with your JAMF Pro details:
 
 ## 🎯 Usage
 
+### Test Connection First
+
+```powershell
+# Test your configuration and connectivity
+.\Test-JamfConnection.ps1 -ConfigPath ".\config.json"
+```
+
 ### Manual Execution
 
 ```powershell
@@ -89,7 +96,7 @@ Edit `config.json` with your JAMF Pro details:
 .\Get-JamfData.ps1
 
 # Specify custom parameters
-.\Get-JamfData.ps1 -ConfigPath ".\config.json" -OutputFormat "Both" -OutputPath ".\data" -LogLevel "Info"
+.\Get-JamfData.ps1 -ConfigPath ".\config.json" -OutputFormat "Both" -OutputPath "C:\backend\data-integration4\scripts\jamf\data" -LogLevel "Info"
 
 # JSON output only
 .\Get-JamfData.ps1 -OutputFormat "JSON"
@@ -101,27 +108,33 @@ Edit `config.json` with your JAMF Pro details:
 .\Get-JamfData.ps1 -LogLevel "Debug"
 ```
 
-### Schedule Regular Execution
+### Enterprise Scheduling Integration
 
-```powershell
-# Set up daily execution at 8:00 AM
-.\Schedule-JamfDataExtraction.ps1 -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Daily" -StartTime "08:00"
+For production environments, this script is designed to be integrated with enterprise scheduling systems such as:
 
-# Set up hourly execution
-.\Schedule-JamfDataExtraction.ps1 -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Hourly" -StartTime "09:00"
+- **Hitachi PDI (Pentaho Data Integration)** - Call the PowerShell script as part of your data pipeline
+- **Apache Airflow** - Use PowerShell operator to execute the script
+- **Control-M** - Schedule as a PowerShell job
+- **Other ETL/Orchestration tools** - Execute via command line interface
 
-# Custom task name and weekly schedule
-.\Schedule-JamfDataExtraction.ps1 -TaskName "Weekly JAMF Extract" -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Weekly" -StartTime "06:00"
+Example for PDI/Kettle integration:
+```bash
+# Command line execution for PDI
+powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\Get-JamfData.ps1"
 ```
 
 ## 📁 Output Structure
 
 ```
-data/
+C:\backend\data-integration4\scripts\jamf\
+├── data/
+│   ├── jamf_computers_inventory_20241215_143022.json
+│   └── jamf_computers_inventory_20241215_143022.csv
 ├── logs/
 │   └── jamf_extraction_20241215_143022.log
-├── jamf_computers_inventory_20241215_143022.json
-└── jamf_computers_inventory_20241215_143022.csv
+├── Get-JamfData.ps1
+├── Test-JamfConnection.ps1
+└── config.json
 ```
 
 ### JSON Output Structure
@@ -183,29 +196,27 @@ data/
 | LastContactTime | Last contact timestamp |
 | ManagementStatus | MDM management status |
 
-## 🔧 Task Scheduler Management
+## 🔧 Enterprise Integration Considerations
 
-After setting up the scheduled task, you can manage it using these PowerShell commands:
+### Hitachi PDI Integration Tips:
+- Use **Execute a shell script** step to call the PowerShell script
+- Set proper **working directory** to the script location
+- Configure **error handling** in your PDI transformation
+- Use PDI **logging** to capture script output
+- Consider **parallel execution** for multiple data sources
 
+### Return Codes:
+- **0** - Success
+- **1** - Configuration or authentication error
+- **2** - Network connectivity error
+- **3** - Data extraction error
+
+### Environment Variables:
+You can override config settings using environment variables in your pipeline:
 ```powershell
-# Start task manually
-Start-ScheduledTask -TaskName "JAMF Pro Data Extraction"
-
-# Stop running task
-Stop-ScheduledTask -TaskName "JAMF Pro Data Extraction"
-
-# Disable task
-Disable-ScheduledTask -TaskName "JAMF Pro Data Extraction"
-
-# Enable task
-Enable-ScheduledTask -TaskName "JAMF Pro Data Extraction"
-
-# Remove task
-Unregister-ScheduledTask -TaskName "JAMF Pro Data Extraction" -Confirm:$false
-
-# Get task information
-Get-ScheduledTask -TaskName "JAMF Pro Data Extraction"
-Get-ScheduledTaskInfo -TaskName "JAMF Pro Data Extraction"
+$env:JAMF_CLIENT_ID = "your_client_id"
+$env:JAMF_CLIENT_SECRET = "your_client_secret"
+$env:JAMF_OUTPUT_PATH = "custom_path"
 ```
 
 ## 📝 Logging
@@ -252,11 +263,14 @@ Execution of scripts is disabled on this system
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-#### Task Scheduler Permissions
+#### PDI Integration Issues
 ```
-Access is denied
+PowerShell execution policy error
 ```
-**Solution**: Run the scheduling script as Administrator
+**Solution**: Set execution policy in PDI step:
+```bash
+powershell.exe -ExecutionPolicy Bypass -File "script.ps1"
+```
 
 ### Debug Mode
 
@@ -276,40 +290,56 @@ Enable debug logging for detailed troubleshooting:
 | OutputPath | String | ".\data" | Output directory path |
 | LogLevel | String | "Info" | Logging level: Info, Warning, Error, Debug |
 
-### Schedule-JamfDataExtraction.ps1 Parameters
+### Test-JamfConnection.ps1 Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| TaskName | String | "JAMF Pro Data Extraction" | Scheduled task name |
-| ScriptPath | String | Required | Path to Get-JamfData.ps1 |
-| Schedule | String | "Daily" | Schedule: Daily, Weekly, Monthly, Hourly |
-| StartTime | String | "08:00" | Start time (HH:mm format) |
-| RunAsUser | String | Current user | User account for task execution |
+| ConfigPath | String | ".\config.json" | Path to configuration file |
 
-## 🔄 Automation Examples
+## 🔄 PDI Integration Examples
 
-### Daily Reports at 6 AM
-```powershell
-.\Schedule-JamfDataExtraction.ps1 -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Daily" -StartTime "06:00"
+### Basic PDI Transformation Step
+```xml
+<step>
+  <name>JAMF Data Extract</name>
+  <type>ShellScript</type>
+  <script>powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\Get-JamfData.ps1"</script>
+  <working_directory>C:\backend\data-integration4\scripts\jamf</working_directory>
+</step>
 ```
 
-### Hourly Monitoring
-```powershell
-.\Schedule-JamfDataExtraction.ps1 -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Hourly" -StartTime "09:00"
+### PDI with Error Handling
+```xml
+<step>
+  <name>JAMF Data Extract with Retry</name>
+  <type>ShellScript</type>
+  <script>
+    for i in {1..3}; do
+      powershell.exe -ExecutionPolicy Bypass -File "Get-JamfData.ps1" && break
+      sleep 60
+    done
+  </script>
+</step>
 ```
 
-### Weekly Summary
-```powershell
-.\Schedule-JamfDataExtraction.ps1 -TaskName "Weekly JAMF Summary" -ScriptPath "C:\Scripts\Get-JamfData.ps1" -Schedule "Weekly" -StartTime "07:00"
+### PDI with Custom Output Path
+```xml
+<step>
+  <name>JAMF Data Extract Custom</name>
+  <type>ShellScript</type>
+  <script>powershell.exe -ExecutionPolicy Bypass -File "Get-JamfData.ps1" -OutputPath "${PDI_OUTPUT_DIR}"</script>
+</step>
 ```
 
 ## 📞 Support
 
 For issues and questions:
-1. Check the log files for detailed error information
-2. Review the troubleshooting section
-3. Verify JAMF Pro API permissions
-4. Test manual execution before scheduling
+1. Run `Test-JamfConnection.ps1` first to validate configuration
+2. Check the log files for detailed error information  
+3. Review the troubleshooting section
+4. Verify JAMF Pro API permissions
+5. Test manual execution before PDI integration
+6. Contact for PDI integration assistance if needed
 
 ---
 
