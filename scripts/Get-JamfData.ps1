@@ -244,40 +244,70 @@ function Get-AccessToken {
     param(
         [string]$BaseUrl,
         [string]$ClientId,
-        [string]$ClientSecret
+        [string]$ClientSecret,
+        [int]$MaxRetries = 3,
+        [int]$RetryDelay = 5
     )
     
-    try {
-        $authUrl = "$BaseUrl/api/oauth/token"
-        $authBody = @{
-            client_id = $ClientId
-            grant_type = "client_credentials"
-            client_secret = $ClientSecret
+    $authUrl = "$BaseUrl/api/oauth/token"
+    $authBody = @{
+        client_id = $ClientId
+        grant_type = "client_credentials"
+        client_secret = $ClientSecret
+    }
+    
+    Write-Log "Requesting access token from JAMF Pro..." -Level "Info"
+    
+    $retryCount = 0
+    $success = $false
+    
+    while ($retryCount -lt $MaxRetries -and !$success) {
+        try {
+            Write-Log "Access token request attempt $($retryCount + 1) of $MaxRetries" -Level "Debug"
+            
+            $webParams = Get-WebRequestParams -BaseParams @{
+                Uri = $authUrl
+                Method = "Post"
+                Body = $authBody
+                ContentType = "application/x-www-form-urlencoded"
+            }
+            
+            $response = Invoke-RestMethod @webParams
+            
+            if ($response.access_token) {
+                Write-Log "Access token obtained successfully on attempt $($retryCount + 1)" -Level "Info"
+                return $response.access_token
+            } else {
+                throw "No access token in response"
+            }
         }
-        
-        Write-Log "Requesting access token from JAMF Pro..." -Level "Info"
-        
-        $webParams = Get-WebRequestParams -BaseParams @{
-            Uri = $authUrl
-            Method = "Post"
-            Body = $authBody
-            ContentType = "application/x-www-form-urlencoded"
-        }
-        
-        $response = Invoke-RestMethod @webParams
-        
-        if ($response.access_token) {
-            Write-Log "Access token obtained successfully" -Level "Info"
-            return $response.access_token
-        } else {
-            Write-Log "No access token in response" -Level "Error"
-            return $null
+        catch {
+            $retryCount++
+            $errorMessage = $_.Exception.Message
+            
+            # Check for specific error types that shouldn't be retried
+            if ($_.Exception.Response.StatusCode -eq 401) {
+                Write-Log "Authentication failed (401 Unauthorized) - Invalid credentials. Not retrying." -Level "Error"
+                return $null
+            }
+            elseif ($_.Exception.Response.StatusCode -eq 400) {
+                Write-Log "Bad request (400) - Invalid request format. Not retrying." -Level "Error"
+                return $null
+            }
+            
+            Write-Log "Access token request attempt $retryCount failed: $errorMessage" -Level "Warning"
+            
+            if ($retryCount -lt $MaxRetries) {
+                Write-Log "Retrying access token request in $RetryDelay seconds..." -Level "Info"
+                Start-Sleep -Seconds $RetryDelay
+            } else {
+                Write-Log "Max retries reached for access token request. Authentication failed." -Level "Error"
+                return $null
+            }
         }
     }
-    catch {
-        Write-Log "Failed to obtain access token: $($_.Exception.Message)" -Level "Error"
-        return $null
-    }
+    
+    return $null
 }
 
 function Test-AccessToken {
@@ -527,8 +557,8 @@ function Main {
             return
         }
         
-        # Get access token
-        $Global:AccessToken = Get-AccessToken -BaseUrl $Global:Config.jamf.baseUrl -ClientId $Global:Config.jamf.clientId -ClientSecret $Global:Config.jamf.clientSecret
+        # Get access token with retry mechanism
+        $Global:AccessToken = Get-AccessToken -BaseUrl $Global:Config.jamf.baseUrl -ClientId $Global:Config.jamf.clientId -ClientSecret $Global:Config.jamf.clientSecret -MaxRetries $Global:Config.extraction.maxRetries -RetryDelay $Global:Config.extraction.retryDelaySeconds
         if (!$Global:AccessToken) {
             throw "Failed to obtain access token"
         }
