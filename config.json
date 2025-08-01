@@ -1,0 +1,26 @@
+{
+  "jamf": {
+    "baseUrl": "https://stmicroelectronics.jamfcloud.com",
+    "clientId": "YOUR_CLIENT_ID",
+    "clientSecret": "YOUR_CLIENT_SECRET",
+    "apiVersion": "v1"
+  },
+  "extraction": {
+    "sections": [
+      "GENERAL",
+      "USER_AND_LOCATION", 
+      "HARDWARE",
+      "OPERATING_SYSTEM",
+      "SOFTWARE_UPDATES"
+    ],
+    "pageSize": 100,
+    "sortBy": "general.name:asc",
+    "maxRetries": 3,
+    "retryDelaySeconds": 5
+  },
+  "output": {
+    "timestampFormat": "yyyyMMdd_HHmmss",
+    "includeTimestampInFilename": true,
+    "compressOutput": false
+  }
+}
