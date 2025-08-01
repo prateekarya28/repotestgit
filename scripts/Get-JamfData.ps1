@@ -164,6 +164,16 @@ function Initialize-ProxySettings {
         if ($Config.proxy.enabled -eq $true) {
             Write-Log "Configuring proxy settings..." -Level "Info"
             
+            # Import CredentialManager module
+            try {
+                Import-Module CredentialManager -ErrorAction Stop
+                Write-Log "CredentialManager module imported successfully" -Level "Debug"
+            }
+            catch {
+                Write-Log "Warning: Failed to import CredentialManager module: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Proxy will use default credentials" -Level "Warning"
+            }
+            
             $proxyUrl = $Config.proxy.url
             $credentialTarget = $Config.proxy.credentialTarget
             
@@ -173,13 +183,13 @@ function Initialize-ProxySettings {
                 try {
                     $proxyCredential = Get-StoredCredential -Target $credentialTarget
                     if ($proxyCredential) {
-                        Write-Log "Proxy credentials loaded from credential store" -Level "Info"
+                        Write-Log "Proxy credentials loaded from credential store: $credentialTarget" -Level "Info"
                     } else {
-                        Write-Log "Warning: Could not retrieve proxy credentials from store" -Level "Warning"
+                        Write-Log "Warning: Could not retrieve proxy credentials from store for target: $credentialTarget" -Level "Warning"
                     }
                 }
                 catch {
-                    Write-Log "Warning: Failed to load proxy credentials: $($_.Exception.Message)" -Level "Warning"
+                    Write-Log "Warning: Failed to load proxy credentials from $credentialTarget : $($_.Exception.Message)" -Level "Warning"
                 }
             }
             
@@ -190,6 +200,11 @@ function Initialize-ProxySettings {
             }
             
             Write-Log "Proxy configured: $proxyUrl" -Level "Info"
+            if ($proxyCredential) {
+                Write-Log "Using stored credentials for proxy authentication" -Level "Info"
+            } else {
+                Write-Log "Using default credentials for proxy authentication" -Level "Info"
+            }
         } else {
             Write-Log "Proxy disabled in configuration" -Level "Info"
             $Global:ProxySettings = $null

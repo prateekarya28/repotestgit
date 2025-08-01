@@ -75,20 +75,30 @@ function Test-ConfigurationFile {
         if ($config.proxy -and $config.proxy.enabled -eq $true) {
             Write-TestResult -Test "Proxy Configuration" -Success $true -Message "Proxy enabled: $($config.proxy.url)"
             
-            if ($config.proxy.credentialTarget -and $config.proxy.credentialTarget -ne "****") {
-                try {
-                    $testCred = Get-StoredCredential -Target $config.proxy.credentialTarget -ErrorAction Stop
-                    if ($testCred) {
-                        Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Credentials found in store"
-                    } else {
-                        Write-TestResult -Test "Proxy Credentials" -Success $false -Message "No credentials found in store"
+            # Test CredentialManager module
+            try {
+                Import-Module CredentialManager -ErrorAction Stop
+                Write-TestResult -Test "CredentialManager Module" -Success $true -Message "Module available"
+                
+                if ($config.proxy.credentialTarget -and $config.proxy.credentialTarget -ne "****") {
+                    try {
+                        $testCred = Get-StoredCredential -Target $config.proxy.credentialTarget -ErrorAction Stop
+                        if ($testCred) {
+                            Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Credentials found for: $($config.proxy.credentialTarget)"
+                        } else {
+                            Write-TestResult -Test "Proxy Credentials" -Success $false -Message "No credentials found for: $($config.proxy.credentialTarget)"
+                        }
                     }
+                    catch {
+                        Write-TestResult -Test "Proxy Credentials" -Success $false -Message "Failed to access credential store: $($_.Exception.Message)"
+                    }
+                } else {
+                    Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Using default credentials"
                 }
-                catch {
-                    Write-TestResult -Test "Proxy Credentials" -Success $false -Message "Failed to access credential store: $($_.Exception.Message)"
-                }
-            } else {
-                Write-TestResult -Test "Proxy Credentials" -Success $true -Message "Using default credentials"
+            }
+            catch {
+                Write-TestResult -Test "CredentialManager Module" -Success $false -Message "Module not available: $($_.Exception.Message)"
+                Write-TestResult -Test "Proxy Credentials" -Success $false -Message "Cannot test without CredentialManager module"
             }
         } else {
             Write-TestResult -Test "Proxy Configuration" -Success $true -Message "Proxy disabled"
@@ -103,7 +113,10 @@ function Test-ConfigurationFile {
 }
 
 function Test-NetworkConnectivity {
-    param([string]$BaseUrl)
+    param(
+        [string]$BaseUrl,
+        [object]$Config = $null
+    )
     
     try {
         $uri = [System.Uri]$BaseUrl
@@ -119,10 +132,48 @@ function Test-NetworkConnectivity {
             return $false
         }
         
+        # Prepare web request parameters with proxy if configured
+        $webParams = @{
+            Uri = $BaseUrl
+            Method = "Head"
+            TimeoutSec = 10
+            ErrorAction = "Stop"
+        }
+        
+        # Add proxy settings if enabled
+        if ($Config -and $Config.proxy -and $Config.proxy.enabled -eq $true) {
+            $webParams.Proxy = $Config.proxy.url
+            
+            if ($Config.proxy.credentialTarget -and $Config.proxy.credentialTarget -ne "****") {
+                try {
+                    Import-Module CredentialManager -ErrorAction Stop
+                    $proxyCredential = Get-StoredCredential -Target $Config.proxy.credentialTarget -ErrorAction Stop
+                    if ($proxyCredential) {
+                        $webParams.ProxyCredential = $proxyCredential
+                        Write-TestResult -Test "Proxy Authentication Setup" -Success $true -Message "Using stored credentials"
+                    } else {
+                        $webParams.ProxyUseDefaultCredentials = $true
+                        Write-TestResult -Test "Proxy Authentication Setup" -Success $true -Message "Using default credentials (no stored creds found)"
+                    }
+                }
+                catch {
+                    $webParams.ProxyUseDefaultCredentials = $true
+                    Write-TestResult -Test "Proxy Authentication Setup" -Success $false -Message "Failed to get stored credentials, using defaults: $($_.Exception.Message)"
+                }
+            } else {
+                $webParams.ProxyUseDefaultCredentials = $true
+                Write-TestResult -Test "Proxy Authentication Setup" -Success $true -Message "Using default credentials"
+            }
+        }
+        
         # Test HTTP connectivity
         try {
-            $response = Invoke-WebRequest -Uri $BaseUrl -Method Head -TimeoutSec 10 -ErrorAction Stop
-            Write-TestResult -Test "HTTP Connectivity" -Success $true -Message "Status: $($response.StatusCode)"
+            $response = Invoke-WebRequest @webParams
+            $statusMsg = "Status: $($response.StatusCode)"
+            if ($Config -and $Config.proxy -and $Config.proxy.enabled -eq $true) {
+                $statusMsg += " (via proxy: $($Config.proxy.url))"
+            }
+            Write-TestResult -Test "HTTP Connectivity" -Success $true -Message $statusMsg
         }
         catch {
             Write-TestResult -Test "HTTP Connectivity" -Success $false -Message $_.Exception.Message
@@ -141,7 +192,8 @@ function Test-ApiAuthentication {
     param(
         [string]$BaseUrl,
         [string]$ClientId,
-        [string]$ClientSecret
+        [string]$ClientSecret,
+        [object]$Config = $null
     )
     
     try {
@@ -154,7 +206,38 @@ function Test-ApiAuthentication {
         
         Write-Host "Testing OAuth authentication..." -ForegroundColor Yellow
         
-        $response = Invoke-RestMethod -Uri $authUrl -Method Post -Body $authBody -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+        # Prepare web request parameters with proxy if configured
+        $webParams = @{
+            Uri = $authUrl
+            Method = "Post"
+            Body = $authBody
+            ContentType = "application/x-www-form-urlencoded"
+            ErrorAction = "Stop"
+        }
+        
+        # Add proxy settings if enabled
+        if ($Config -and $Config.proxy -and $Config.proxy.enabled -eq $true) {
+            $webParams.Proxy = $Config.proxy.url
+            
+            if ($Config.proxy.credentialTarget -and $Config.proxy.credentialTarget -ne "****") {
+                try {
+                    Import-Module CredentialManager -ErrorAction Stop
+                    $proxyCredential = Get-StoredCredential -Target $Config.proxy.credentialTarget -ErrorAction Stop
+                    if ($proxyCredential) {
+                        $webParams.ProxyCredential = $proxyCredential
+                    } else {
+                        $webParams.ProxyUseDefaultCredentials = $true
+                    }
+                }
+                catch {
+                    $webParams.ProxyUseDefaultCredentials = $true
+                }
+            } else {
+                $webParams.ProxyUseDefaultCredentials = $true
+            }
+        }
+        
+        $response = Invoke-RestMethod @webParams
         
         if ($response.access_token) {
             Write-TestResult -Test "OAuth Token Request" -Success $true -Message "Token obtained successfully"
@@ -166,7 +249,37 @@ function Test-ApiAuthentication {
                 "Accept" = "application/json"
             }
             
-            $jamfInfo = Invoke-RestMethod -Uri $testUrl -Method Get -Headers $headers -ErrorAction Stop
+            # Prepare web request parameters with proxy if configured
+            $webParams = @{
+                Uri = $testUrl
+                Method = "Get"
+                Headers = $headers
+                ErrorAction = "Stop"
+            }
+            
+            # Add proxy settings if enabled
+            if ($Config -and $Config.proxy -and $Config.proxy.enabled -eq $true) {
+                $webParams.Proxy = $Config.proxy.url
+                
+                if ($Config.proxy.credentialTarget -and $Config.proxy.credentialTarget -ne "****") {
+                    try {
+                        Import-Module CredentialManager -ErrorAction Stop
+                        $proxyCredential = Get-StoredCredential -Target $Config.proxy.credentialTarget -ErrorAction Stop
+                        if ($proxyCredential) {
+                            $webParams.ProxyCredential = $proxyCredential
+                        } else {
+                            $webParams.ProxyUseDefaultCredentials = $true
+                        }
+                    }
+                    catch {
+                        $webParams.ProxyUseDefaultCredentials = $true
+                    }
+                } else {
+                    $webParams.ProxyUseDefaultCredentials = $true
+                }
+            }
+            
+            $jamfInfo = Invoke-RestMethod @webParams
             Write-TestResult -Test "Token Validation" -Success $true -Message "JAMF Pro Version: $($jamfInfo.version)"
             
             return $response.access_token
@@ -188,7 +301,8 @@ function Test-ApiAuthentication {
 function Test-ApiEndpoint {
     param(
         [string]$BaseUrl,
-        [string]$AccessToken
+        [string]$AccessToken,
+        [object]$Config = $null
     )
     
     try {
@@ -202,7 +316,37 @@ function Test-ApiEndpoint {
         
         Write-Host "Testing computers inventory endpoint..." -ForegroundColor Yellow
         
-        $response = Invoke-RestMethod -Uri $testUrl -Method Get -Headers $headers -ErrorAction Stop
+        # Prepare web request parameters with proxy if configured
+        $webParams = @{
+            Uri = $testUrl
+            Method = "Get"
+            Headers = $headers
+            ErrorAction = "Stop"
+        }
+        
+        # Add proxy settings if enabled
+        if ($Config -and $Config.proxy -and $Config.proxy.enabled -eq $true) {
+            $webParams.Proxy = $Config.proxy.url
+            
+            if ($Config.proxy.credentialTarget -and $Config.proxy.credentialTarget -ne "****") {
+                try {
+                    Import-Module CredentialManager -ErrorAction Stop
+                    $proxyCredential = Get-StoredCredential -Target $Config.proxy.credentialTarget -ErrorAction Stop
+                    if ($proxyCredential) {
+                        $webParams.ProxyCredential = $proxyCredential
+                    } else {
+                        $webParams.ProxyUseDefaultCredentials = $true
+                    }
+                }
+                catch {
+                    $webParams.ProxyUseDefaultCredentials = $true
+                }
+            } else {
+                $webParams.ProxyUseDefaultCredentials = $true
+            }
+        }
+        
+        $response = Invoke-RestMethod @webParams
         
         $computerCount = if ($response.totalCount) { $response.totalCount } else { "Unknown" }
         Write-TestResult -Test "Computers Inventory Endpoint" -Success $true -Message "Total computers: $computerCount"
@@ -277,7 +421,7 @@ try {
     # Test 2: Network connectivity
     Write-Host "2. Network Connectivity Tests" -ForegroundColor White
     Write-Host "-----------------------------" -ForegroundColor White
-    $networkOk = Test-NetworkConnectivity -BaseUrl $config.jamf.baseUrl
+    $networkOk = Test-NetworkConnectivity -BaseUrl $config.jamf.baseUrl -Config $config
     if (!$networkOk) {
         Write-Host "`nNetwork connectivity test failed. Please check your network connection and JAMF Pro URL." -ForegroundColor Red
         exit 1
@@ -287,7 +431,7 @@ try {
     # Test 3: Authentication
     Write-Host "3. Authentication Tests" -ForegroundColor White
     Write-Host "-----------------------" -ForegroundColor White
-    $accessToken = Test-ApiAuthentication -BaseUrl $config.jamf.baseUrl -ClientId $config.jamf.clientId -ClientSecret $config.jamf.clientSecret
+    $accessToken = Test-ApiAuthentication -BaseUrl $config.jamf.baseUrl -ClientId $config.jamf.clientId -ClientSecret $config.jamf.clientSecret -Config $config
     if (!$accessToken) {
         Write-Host "`nAuthentication test failed. Please verify your Client ID and Client Secret." -ForegroundColor Red
         exit 1
@@ -297,7 +441,7 @@ try {
     # Test 4: API endpoints
     Write-Host "4. API Endpoint Tests" -ForegroundColor White
     Write-Host "---------------------" -ForegroundColor White
-    $apiOk = Test-ApiEndpoint -BaseUrl $config.jamf.baseUrl -AccessToken $accessToken
+    $apiOk = Test-ApiEndpoint -BaseUrl $config.jamf.baseUrl -AccessToken $accessToken -Config $config
     if (!$apiOk) {
         Write-Host "`nAPI endpoint test failed. Please check your API permissions." -ForegroundColor Red
         exit 1
