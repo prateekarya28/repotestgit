@@ -554,7 +554,7 @@ function Main {
         # Validate configuration
         if ($Global:Config.jamf.clientId -eq "YOUR_CLIENT_ID" -or $Global:Config.jamf.clientSecret -eq "YOUR_CLIENT_SECRET") {
             Write-Log "Please update the clientId and clientSecret in the configuration file." -Level "Error"
-            return
+            exit 1
         }
         
         # Get access token with retry mechanism
@@ -574,7 +574,7 @@ function Main {
         
         if ($computerData.Count -eq 0) {
             Write-Log "No computer data retrieved" -Level "Warning"
-            return
+            exit 3
         }
         
         # Export data based on output format
@@ -599,11 +599,26 @@ function Main {
         }
         
         Write-Log "JAMF Pro Data Extraction Script Completed" -Level "Info"
+        exit 0
     }
     catch {
         Write-Log "Script execution failed: $($_.Exception.Message)" -Level "Error"
         Write-Log "Stack Trace: $($_.ScriptStackTrace)" -Level "Debug"
-        exit 1
+        
+        # Determine appropriate exit code based on error type
+        $exitCode = 1
+        if ($_.Exception.Message -match "Failed to obtain access token|Invalid credentials|Authentication failed") {
+            $exitCode = 1  # Authentication/Configuration error
+        }
+        elseif ($_.Exception.Message -match "Network|connectivity|Unable to connect|DNS|proxy") {
+            $exitCode = 2  # Network connectivity error
+        }
+        elseif ($_.Exception.Message -match "data extraction|API|computers-inventory") {
+            $exitCode = 3  # Data extraction error
+        }
+        
+        Write-Log "Exiting with code: $exitCode" -Level "Error"
+        exit $exitCode
     }
 }
 

@@ -7,6 +7,8 @@ This repository contains PowerShell scripts to extract computer inventory data f
 The solution includes:
 - **`Get-JamfData.ps1`** - Main data extraction script
 - **`Test-JamfConnection.ps1`** - Connection and credential validation script
+- **`run-jamf-extraction.bat`** - Batch wrapper for PDI integration
+- **`test-wrapper.bat`** - Test script for wrapper validation
 - **`config.json`** - Configuration file for API credentials and settings
 
 ## 🚀 Features
@@ -86,26 +88,40 @@ Edit `config.json` with your JAMF Pro details:
 
 ```powershell
 # Test your configuration and connectivity
-.\Test-JamfConnection.ps1 -ConfigPath ".\config.json"
+.\scripts\Test-JamfConnection.ps1 -ConfigPath ".\config.json"
+```
+
+### Test Batch Wrapper
+
+```batch
+# Test the batch wrapper functionality
+.\scripts\test-wrapper.bat
 ```
 
 ### Manual Execution
 
 ```powershell
 # Basic usage with default settings
-.\Get-JamfData.ps1
+.\scripts\Get-JamfData.ps1
 
 # Specify custom parameters
-.\Get-JamfData.ps1 -ConfigPath ".\config.json" -OutputFormat "Both" -OutputPath "C:\backend\data-integration4\scripts\jamf\data" -LogLevel "Info"
+.\scripts\Get-JamfData.ps1 -ConfigPath ".\config.json" -OutputFormat "Both" -OutputPath "C:\backend\data-integration4\scripts\jamf\data" -LogLevel "Info"
 
 # JSON output only
-.\Get-JamfData.ps1 -OutputFormat "JSON"
+.\scripts\Get-JamfData.ps1 -OutputFormat "JSON"
 
 # CSV output only
-.\Get-JamfData.ps1 -OutputFormat "CSV"
+.\scripts\Get-JamfData.ps1 -OutputFormat "CSV"
 
 # Debug logging
-.\Get-JamfData.ps1 -LogLevel "Debug"
+.\scripts\Get-JamfData.ps1 -LogLevel "Debug"
+```
+
+### PDI Integration (Recommended)
+
+```batch
+# Execute via batch wrapper (recommended for PDI)
+.\scripts\run-jamf-extraction.bat
 ```
 
 ### Enterprise Scheduling Integration
@@ -118,22 +134,29 @@ For production environments, this script is designed to be integrated with enter
 - **Other ETL/Orchestration tools** - Execute via command line interface
 
 Example for PDI/Kettle integration:
-```bash
-# Command line execution for PDI
-powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\Get-JamfData.ps1"
+```batch
+# Recommended approach - Call batch wrapper from PDI
+C:\backend\data-integration4\scripts\jamf\scripts\run-jamf-extraction.bat
+
+# Alternative - Direct PowerShell execution (not recommended)
+powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\scripts\Get-JamfData.ps1"
 ```
 
 ## 📁 Output Structure
 
 ```
 C:\backend\data-integration4\scripts\jamf\
+├── scripts/
+│   ├── Get-JamfData.ps1
+│   ├── Test-JamfConnection.ps1
+│   ├── run-jamf-extraction.bat
+│   └── test-wrapper.bat
 ├── data/
 │   ├── jamf_computers_inventory_20241215_143022.json
 │   └── jamf_computers_inventory_20241215_143022.csv
 ├── logs/
-│   └── jamf_extraction_20241215_143022.log
-├── Get-JamfData.ps1
-├── Test-JamfConnection.ps1
+│   ├── jamf_extraction_20241215_143022.log
+│   └── batch_execution_20241215_143022.log
 └── config.json
 ```
 
@@ -298,12 +321,12 @@ Enable debug logging for detailed troubleshooting:
 
 ## 🔄 PDI Integration Examples
 
-### Basic PDI Transformation Step
+### Basic PDI Transformation Step (Recommended)
 ```xml
 <step>
   <name>JAMF Data Extract</name>
   <type>ShellScript</type>
-  <script>powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\Get-JamfData.ps1"</script>
+  <script>C:\backend\data-integration4\scripts\jamf\scripts\run-jamf-extraction.bat</script>
   <working_directory>C:\backend\data-integration4\scripts\jamf</working_directory>
 </step>
 ```
