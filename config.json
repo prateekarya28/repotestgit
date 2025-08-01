@@ -1,0 +1,35 @@
+{
+  "jamf": {
+    "baseUrl": "https://stmicroelectronics.jamfcloud.com",
+    "clientId": "YOUR_CLIENT_ID",
+    "clientSecret": "YOUR_CLIENT_SECRET",
+    "apiVersion": "v1"
+  },
+  "proxy": {
+    "enabled": true,
+    "url": "*********",
+    "credentialTarget": "LegacyGeneric:target=****",
+    "useSystemProxy": false
+  },
+  "extraction": {
+    "sections": [
+      "GENERAL",
+      "USER_AND_LOCATION", 
+      "HARDWARE",
+      "OPERATING_SYSTEM",
+      "SOFTWARE_UPDATES"
+    ],
+    "pageSize": 100,
+    "sortBy": "general.name:asc",
+    "maxRetries": 3,
+    "retryDelaySeconds": 5
+  },
+  "output": {
+    "basePath": "C:\\backend\\data-integration4\\scripts\\jamf",
+    "dataPath": "C:\\backend\\data-integration4\\scripts\\jamf\\data",
+    "logPath": "C:\\backend\\data-integration4\\scripts\\jamf\\logs",
+    "timestampFormat": "yyyyMMdd_HHmmss",
+    "includeTimestampInFilename": true,
+    "compressOutput": false
+  }
+}
