@@ -94,7 +94,7 @@ Edit `config.json` with your JAMF Pro details:
 ### Test Batch Wrapper
 
 ```batch
-# Test the batch wrapper functionality
+# Test the connection using simple batch wrapper
 .\scripts\test-wrapper.bat
 ```
 
@@ -117,10 +117,10 @@ Edit `config.json` with your JAMF Pro details:
 .\scripts\Get-JamfData.ps1 -LogLevel "Debug"
 ```
 
-### PDI Integration (Recommended)
+### PDI Integration (Simple Batch Wrapper)
 
 ```batch
-# Execute via batch wrapper (recommended for PDI)
+# Execute via simple batch wrapper for PDI
 .\scripts\run-jamf-extraction.bat
 ```
 
@@ -135,11 +135,8 @@ For production environments, this script is designed to be integrated with enter
 
 Example for PDI/Kettle integration:
 ```batch
-# Recommended approach - Call batch wrapper from PDI
+# Simple batch wrapper approach for PDI
 C:\backend\data-integration4\scripts\jamf\scripts\run-jamf-extraction.bat
-
-# Alternative - Direct PowerShell execution (not recommended)
-powershell.exe -ExecutionPolicy Bypass -File "C:\backend\data-integration4\scripts\jamf\scripts\Get-JamfData.ps1"
 ```
 
 ## 📁 Output Structure
@@ -321,7 +318,7 @@ Enable debug logging for detailed troubleshooting:
 
 ## 🔄 PDI Integration Examples
 
-### Basic PDI Transformation Step (Recommended)
+### Basic PDI Transformation Step
 ```xml
 <step>
   <name>JAMF Data Extract</name>
